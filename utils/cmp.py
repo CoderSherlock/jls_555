@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 imga = cv2.imread(sys.argv[1])
 imgb = cv2.imread(sys.argv[2])
 
+print(imgb)
+
 if(imga.shape != imgb.shape):
     print("Wrong images, not from same origin")
     exit(0)
