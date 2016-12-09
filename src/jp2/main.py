@@ -131,9 +131,9 @@ if __name__ == "__main__":
     u = copy2(tu, height, width)
     v = copy2(tv, height, width)    
 
-    y = round_control(y, height, width, 2)
-    u = round_control(u, height, width, 2)
-    v = round_control(v, height, width, 2)
+    y = round_control(y, height, width, 3)
+    u = round_control(u, height, width, 3)
+    v = round_control(v, height, width, 3)
 
     plt.subplot(221),plt.imshow(y,'gray'),plt.title('y')
     plt.subplot(222),plt.imshow(u,'gray'),plt.title('u')
@@ -149,26 +149,42 @@ if __name__ == "__main__":
     v = copyint(v, height, width)
 
     print("saving")
-    print y,u,v
-    # Save jp2 to bmp 
-    ha = np.zeros((height, width,3), np.uint16)
+    # print y,u,v
+        
+    # Test somthing
+    cal = {}
     for i in range(0, height):
         for j in range(0, width):
-                ha[i][j][0] = y[i][j]
-                ha[i][j][1] = u[i][j]
-                ha[i][j][2] = v[i][j]
-    cv2.imwrite("basel2jp2.jp2.bmp", ha)
+            if y[i][j] in cal.keys():
+                cal[y[i][j]] += 1
+            else:
+                cal[y[i][j]] = 1
+    cal = sorted(cal.items(), key=lambda x: x[1])
+    # print cal
+    # End testing something
+
+
+    # Save jp2 to bmp 
+    
+    #ha = np.zeros((height, width,3), np.uint16)
+    #for i in range(0, height):
+    #    for j in range(0, width):
+    #            ha[i][j][0] = y[i][j]
+    #            ha[i][j][1] = u[i][j]
+    #            ha[i][j][2] = v[i][j]
+    #cv2.imwrite("basel2jp2.jp2.bmp", ha)
 
 
     # Load jp2 from bmp/format
 
-    y, u, v = cv2.split(cv2.imread("basel2jp2.jp2.bmp"))
-    print("loading")
-    print y,u,v
+    #y, u, v = cv2.split(cv2.imread("basel2jp2.jp2.bmp"))
+    #print("loading")
+    #print y,u,v
 
-    y = round_control(y, height, width, 2, 1)
-    u = round_control(u, height, width, 2, 1)
-    v = round_control(v, height, width, 2, 1)
+    y = round_control(y, height, width, 3, 1)
+    u = round_control(u, height, width, 3, 1)
+    v = round_control(v, height, width, 3, 1)
+
 
     #print_file(y, height, width, "y.dat")
     #print_file(u, height, width, "u.dat")
