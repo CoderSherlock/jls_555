@@ -2,6 +2,7 @@ import sys
 import cv2
 import pywt
 import numpy as np
+from coding import huffman
 from matplotlib import pyplot as plt
 
 
@@ -152,15 +153,18 @@ if __name__ == "__main__":
     # print y,u,v
         
     # Test somthing
-    cal = {}
+    alist = []
     for i in range(0, height):
         for j in range(0, width):
-            if y[i][j] in cal.keys():
-                cal[y[i][j]] += 1
-            else:
-                cal[y[i][j]] = 1
-    cal = sorted(cal.items(), key=lambda x: x[1])
-    # print cal
+            alist.append(y[i][j])
+            alist.append(u[i][j])
+            alist.append(v[i][j])
+    print alist
+    tree = huffman(alist)
+    tree.buildtree()
+    tree.encode()
+    print(len(tree.bflow)/8)
+
     # End testing something
 
 
