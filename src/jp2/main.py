@@ -159,11 +159,11 @@ if __name__ == "__main__":
             alist.append(y[i][j])
             alist.append(u[i][j])
             alist.append(v[i][j])
-    print alist
+    #print alist
     tree = huffman(alist)
     tree.buildtree()
     tree.encode()
-    print(len(tree.bflow)/8)
+    tree.estimateSize()
 
     # End testing something
 
