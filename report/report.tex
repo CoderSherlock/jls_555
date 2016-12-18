@@ -2,6 +2,7 @@
 \usepackage{geometry}
 \geometry{left=3cm,right=3cm,top=3cm,bottom=3cm}
 \usepackage{listings}
+\usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{amsmath}
 \usepackage{algorithm}
@@ -10,12 +11,15 @@
 \usepackage{mathtools}
 \DeclarePairedDelimiter\ceil{\lceil}{\rceil}
 \DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}%
 \usepackage{graphicx}
 \graphicspath{ {images/} }
-\linespread{1.25}
+\linespread{1.5}
 \usepackage{tikz, mathpazo}
 \usetikzlibrary{shapes.geometric, arrows}
 \usepackage{setspace}
+\usepackage{pgfplots}
+\usepackage[T1]{fontenc}
 
 \begin{document}
 \title{JPEG Family: Near-Lossless Compression Method Comparsion Study}
@@ -118,8 +122,45 @@ In JPEG2000, there isn't a pre-defined block size which means static quantizatio
 JPEG2000 use arithmetic coder for low level coding operations. Embedded Block Coding with Optimal Truncation (EBCOT) is first step of coding. EBCOT is an implementation of compress by region of interests. It has some concepts of round to zero which has been covered in my quantization design. Basically, in this encoding process, each bit plane of the code block gets encoded in three so-called coding passes, first encoding bits (and signs) of insignificant coefficients with significant neighbors (i.e., with 1-bits in higher bit planes), then refinement bits of significant coefficients and finally coefficients without significant neighbors. The three passes are called Significance Propagation, Magnitude Refinement and Cleanup pass, respectively.\cite{jpeg2kwiki} After EBCOT, bits will be encoded by a context-driven binary arithmetic coder, namely the binary MQ-coder.
 Unfortunately, MQ-coder and EBCOT are high computable uneffcience. In EBCOT, algorithm takes a great complexity. So, I didn't consider use EBCOT and MQ-coder as coding both in design and my own implementation. Instead of these techniques, I choose huffman coding, the one used in JPEG standard, as my coding system.
 \subsection{JPEG-LS}
-
-
+JPEG-LS use three important concepts which is prediction, context modealing and Golomb codes. For each pixel in an image, it will be gradients first, and them pass to fixed predicotr and adaptive correction, after prediction, context modeler will check is all predication is correctr, if not, then it will modify correction components, and start fixed predictor and adaptaive correction again. After finally converged, result will be pass to the golomb coder, which be compress in serial.\\
+In LOCO-I JPEG-LS, fixed predictor is used following equation\cite{locol}\cite{locol2}:\\
+\[
+\hat{x}_{MED} =
+\begin{cases}
+min(a,b) & if c \geq max(a,b) \\
+max(a,b) & if c \leq min(a,b) \\
+a+b-c & otherwise. \\
+\end{cases}
+\]
+After prediction, context determination will decide whether predict error rate is below than threshold or equal to 0. There is a shiftable correction value which can be modify by process, after determination, correction value can be computed as the rounded average\cite{locol}:\\
+\[
+C' =
+\ceil{D/N}
+\]
+\[
+D=N*C' +B'
+\] where Integer$B'$ satisfies $-N < B' \leq 0$. It is redily verified, by setting up a singple recursion. And the bias computing code looks like:
+\begin{spacing}{0.7}
+\begin{algorithm}[htb]
+\caption{Bias Computation}
+   \begin{algorithmic}[1]
+   \State $B=B+\epsilon$ \Comment{accumulate prediction residual}
+   \State $N=N+1$ \Comment{update occurrence cunter}
+   \If $ B\leq -N$
+   		\State $C=C-1, B=B+N$
+   		\If $B \leq -N$
+   			\State $ B=-N+1$
+   		\EndIf
+   	\ElsIf $B>0$
+   		\State $C=C+1, B=B-N$
+   		\If $B > 0$
+   			\State $ B=0$
+   		\EndIf
+   	\EndIf
+\end{algorithmic}
+\end{algorithm}
+\end{spacing}
+After previewsly steps, result can be passed to golomb coder to be encoded. I won't generally talks about this part and all JPEG-LS's implementation, compare to JPEG2000, it was not my focusing. 
 \section{Implementation}
 In my project, I follow my design of section 3 to implement my work. To make my work content clearly, I draw everything on the process in Figure 2.
 \begin{figure}[htb]
@@ -205,11 +246,18 @@ My implementation of haar wavelet transform is very simple. For each stage, prog
 \end{algorithmic}
 \end{algorithm}
 \end{spacing}
+After Haar wavelet transform, three channel should look like Figure 3:
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[scale=0.5]{dwt}
+\caption[12pt]{Y,U,V channels after DWT} \label{tab:title} 
+\end{center}
+\end{figure}
 \subsection{CDF 9/7 Wavelet Transform}
 CDF 9/7 is implementation by article "how does JPEG 2000 work?".\cite{jpeg2kwork} It turns that it doesn't work well even under very casual test experiments. Attaching my code below, which is mainly about transform, to prevent result bias, we also need to do some optimation in the end of this function, but that part is not such important, so I will discard it.
 \begin{spacing}{0.7}
 \begin{algorithm}[htb]
-\caption{2D Haar Discrete Cosine Transform}
+\caption{2D CDF 9/7 Discrete Cosine Transform}
    \begin{algorithmic}[1]
    	  \State $ Array a = [-1.586, -0.053, 0.883, 0.444]$ \Comment{9/7 CDF Filter Coefficiences}
       \Function{Haar\_DWT}{$Matrix, height, width$}
@@ -237,58 +285,209 @@ CDF 9/7 is implementation by article "how does JPEG 2000 work?".\cite{jpeg2kwork
 \end{algorithm}
 \end{spacing}
 \subsection{Huffman Coding}
+Huffman coding is definately not the hardest part of this project, but I spent much more time on this part. Huffman coding is based on translate table and variety length content. I used the most common way to first build huffman tree according to pixel value appearances. After that, I will translate pixels by each and send them to a static length buffer. Everytime the buffer is full, it will automatically write to the hard disk. \\
+To prevent decoding is absolutely right, metadat such as height, width, super code and length of translate table will be first write into filesystem. Then huffman tree will be recusively write only by pairs of $<key, value>$. After translate table written to the file, translation and content write will start. If the buffer is still not full at end of last pixel, it will automatically find the last bit of sequence. Then it will fulfill the buffer by the other binary number. \\  
+When decoding the file, it will inverse do what previews encoding's steps. Python has very good support on dictionary lookup based on cpython translator, so both encoding and decoding can be done very fast.
 \subsection{File Organization}
+This project is organized in common development structure and use git as version control.\\
+Under $img$ directory, it has some final images of my work. All images except $basel2.bmp$ is generated by program. Experiement images are not included. (P.s some expereiment iamges are really big and made my github crashed once, make me set head again! Just complaint a while, Prof. you won't see this sentences, I guess)\\
+Under $src$ directory, it has two sub directories. jp2 is source code of my JPEG2000 implementation and jls is R srcipt for JPEGLS.\\
+Under $utils$ direcotry, some utilities are included. $cmp.py$ is used for comparsion error rate (loss rate). $trans.py$ is a template for write a image preprossing program. \\
 \section{Comparsion}
 \subsection{Metrics}
+To measure image quality and compress rate, I pre-defined two metrics for each of them. Image quality is no doubt the most important measurement of this project. I compute the average differential between each componenets, which means for each color channel, the target image and original image should keep same.
+\[
+Loss rate =  \frac{\sum_{h=1}^{height}\sum_{w=1}^{width}\sum_{c=1}^{3} \abs{Original[h][w][c] - Target[h][w][c]}}{height * width * 3}
+\]
+After testing some images based on libjpeg and HPJPEG-LS library, I set 1 as a threshold of distinguish near-lossless and lossy compression. However, implementation might have some problem and correctness issue,so I set it as 1.5.\\
+As for compression ratio, I used an estimation of encoded file as the standard. For huffman encoded file:
+ \[
+Estimated File Size =  \frac{Metadata*8+Symbol Table Length*4*2+content}{8} Bytes
+\]
+I didn't find any image dataset for compress test, to enforce my result, I use some crawlers download some random pictures with different keywords. Only images larger than $512*512$ can be accepted. After have a dataset with more than 300 images. I used $trans.py$ write a automative script, crop all of them to $512*512$ and save as bmp format.
 \subsection{Image Quality}
-\begin{figure}[htbp]
-\centering
-\caption {PC Web Browser} \label{tab:title} 
-\begin{tabular}{llr}
-	\hline
-	Operation & Comment & Traffic (KB)\\
-	\hline
-	Open Google Docs & & 1120.437\\
-	\hline
-	Open a document\footnotemark[1] & & 852.116\\
-	\hline
-	Do Nothing & & 0\\
-	\hline
-	Insert\footnotemark[2] at beginning & 1 character & 1.510\\
-	 & 10 characters & 7.831 \\
-	 & 100 characters & 76.231 \\
-	 \hline
-	 Insert at middle & 1 character & 3.070\\
-	 & 10 characters & 7.858 \\
-	 & 100 characters & 86.082 \\
-	 \hline
-	 Insert\footnotemark[3] at beginning & 100 characters & 6.204\\
-	 \hline
-	 Bold \& Unbold & bold &  39.409 \\
-	 & unbold & 34.012 \\
-	 \hline
-	 Replace & replace "usa" to ")))", 125 occurrences & 96.745\\
-	 & replace "op" to "]]", 802 occurrences & 645.305\\
-	 \hline
-	 Close a document & & 159.227\\
-	 \hline
-\end{tabular} 
+Based on pre-defined metrics, I gather data for all three type JPEG-family compression. Ploting of first 50 test data are in following figure 4. And in table 2, we can see all result of 300 images.\\
+We can easily get some conclusion according to table 2 and figure 4. Obviously, JPEG was not designed for near-lossless compression, but it do have very great result even compared with JEPG2000 or JPEG-LS. JPEG2000 and JPEG-LS have samiliar results, especially in average error rate and Maximum Error Rate. But in fact, JPEG-LS was running in matlab, its core function is provided by HP Lab\cite{hplab}, and did have very stable performance than JPEG2000.\\
+Also, JPEG2000 are better in computation time, I didn't notice that in a special section, but according to serveral times running timestamp, it has a great decreasing on running time compare with JPEG-LS.
+\begin{center}
+\begin{figure}[htb]
+\begin{tikzpicture}
+\begin{axis}
+[
+    %title={Image Quality Comparison},
+    xlabel={File\# , first 50},
+    ylabel={Error Rate},
+    xmin=1, xmax=50,
+    ymin=0, ymax=4,
+    xtick={0,10,20,30,40,50},
+    ytick={0,0.5,1.0,1.5,2,2.5,3},
+    width=15cm, height=7cm,
+    legend pos=north west,
+    ymajorgrids=true,
+    grid style=dashed,
+]
+ 
+\addplot[
+    color=blue,
+    mark=square,
+    ]
+    coordinates {
+(1,0.744364244112) (2,1.56603427189) (3,0.847964627092) (4,0.846048089737) (5,1.23290169489) (6,1.40334008376) (7,0.933832764833) (8,0.836705859381) (9,1.07300735782) (10,1.18140259469) (11,1.06237955351) (12,1.08457067869) (13,0.869008491715) (14,0.716828537702) (15,1.57524214155) (16,0.971522774914) (17,1.13198390971) (18,0.791264863333) (19,1.2871258268) (20,1.51563967617) (21,0.774949479833) (22,1.56820937982) (23,1.53486525163) (24,1.32234298783) (25,0.98696230239) (26,1.35729126622) (27,1.25849721998) (28,0.722957170176) (29,1.15811905381) (30,1.14908156461) (31,0.622278247398) (32,0.687421783853) (33,1.18032842314) (34,1.13893538294) (35,1.15869460564) (36,0.938700520533) (37,1.29200456059) (38,1.24947369472) (39,0.819851244537) (40,1.06860670939) (41,0.991020689996) (42,1.24942679846) (43,0.648551839337) (44,1.01853587925) (45,0.881875414384) (46,1.49826807645) (47,0.961846255828) (48,1.15815782842) (49,0.676883976343) (50,1.10753656876)
+    };
+    
+\addplot[
+    color=red,
+    mark=*,
+    ]
+    coordinates {
+(1,1.1704624339) (2,1.68484840086) (3,1.43199903367) (4,1.63955008079) (5,1.06323789799) (6,1.67614343162) (7,1.02979599951) (8,1.40653001545) (9,1.15692983239) (10,1.21546472831) (11,1.34614120519) (12,1.64959409611) (13,1.31159745761) (14,1.33331078356) (15,1.29032079952) (16,1.04956624894) (17,1.05235562981) (18,1.51916825493) (19,1.47896866669) (20,1.63683846655) (21,1.22662734207) (22,1.05139865836) (23,1.1958708315) (24,1.60180991163) (25,1.3155915939) (26,1.25938964877) (27,1.55938075838) (28,1.57013470181) (29,1.10173531328) (30,1.19004377928) (31,1.35415828964) (32,1.10130438684) (33,1.34730931886) (34,1.51207179128) (35,1.13971209445) (36,1.55406815517) (37,1.10216836048) (38,1.27824221389) (39,1.05676346524) (40,1.14256931319) (41,1.05846436481) (42,1.29473123) (43,1.63864035155) (44,1.38276108748) (45,1.53211303482) (46,1.25941601709) (47,1.13617607355) (48,1.24947874473) (49,1.28278465246) (50,1.10196847857)
+    };
+    
+\addplot[
+    color=purple,
+    mark=*,
+    ]
+    coordinates {
+(1,2.162460853) (2,1.98926848255) (3,2.32162004803) (4,2.31398437208) (5,2.28123973963) (6,2.21427349322) (7,2.02859278387) (8,1.98220809196) (9,2.04183321544) (10,2.30370478508) (11,2.26086822614) (12,2.12249865363) (13,1.94222212807) (14,2.02637420047) (15,2.28836095) (16,2.25854301258) (17,2.02604121203) (18,2.21439290712) (19,2.3005251434) (20,2.1359751816) (21,1.96492059475) (22,2.1340074027) (23,1.95094543954) (24,2.3143123027) (25,2.29002328766) (26,2.15903069574) (27,1.94783031795) (28,2.30601363614) (29,2.16443910738) (30,2.13791117676) (31,2.05617407552) (32,2.0949715309) (33,2.12753306018) (34,2.12364750243) (35,2.19781401448) (36,2.16028648325) (37,1.95894662971) (38,2.00737453396) (39,1.93060406911) (40,2.23863637588) (41,2.1369283598) (42,2.16303537575) (43,2.2925484621) (44,2.10930688869) (45,2.27819028901) (46,1.98333406669) (47,2.17209595216) (48,2.09140070171) (49,1.95844300299) (50,2.25952289679)
+	};
+    \legend{JPEG2000, JPEG-LS, JPEG Standard}
+ 
+\end{axis}
+\end{tikzpicture}
+\caption[12pt]{Image Quality Comparison: Acroos JPEG, JPEG2000 and JPEG-LS} \label{tab:title} 
 \end{figure}
-\footnotetext[2]{This document is about 1000 KB}
+\end{center}
+\begin{table}[htbp]
+\centering
+\caption {Summary of Quality Comparison} \label{tab:title} 
+\begin{tabular}{cccc}
+	\hline
+	Compress Standard & JPEG & JPEG2000 & JPEG-LS \\
+	\hline
+	Average Error Rate & 2.312 & 1.310 & 1.329 \\
+	\hline
+	Maximum Error Rate & 2.797 & 2.255 & 2.319 \\
+	Minimum Error Rate & 1.813 & 0.399 & 0.810 \\
+	\hline
+\end{tabular} 
+\end{table}
 \subsection{Compression Ratio}
+Compression ratio is also an important metric for image compress method comparison. Due to some reason, we can't get exactly size of file. But as we demonstrate in previews section, we used a method to estimate approximate size of compressed image. Table 3 shows briefly results of all datasets, and figure 5 shows first 50 files' file size.
 
+\begin{table}[htbp]
+\centering
+\caption {Summary of Compression Rate Comparison} \label{tab:title} 
+\begin{tabular}{cccc}
+	\hline
+	Compress Standard & JPEG & JPEG2000 & JPEG-LS \\
+	\hline
+	Average Compress Ratio & 19.43\% & 48.98\% & 53.44\% \\
+	\hline
+	Best Compress Ratio & 15.75\% & 42.41\% & 40.18\% \\
+	Worst Compress Ratio & 25.41\% & 61.62\% & 71.96\% \\
+	\hline
+\end{tabular} 
+\end{table}
 
-\section{Summary}
-
-
+\begin{center}
+\begin{figure}[htb]
+\begin{tikzpicture}
+\begin{axis}
+[
+    %title={Image Quality Comparison},
+    xlabel={File\# , first 50},
+    ylabel={File Size or Estimated File size, original is 786.8 Kb},
+    xmin=0, xmax=50,
+    ymin=100, ymax=800,
+    xtick={0,10,20,30,40,50},
+    ytick={100,150,200,250,300,350,400,450,500,550,600,650,786},
+    width=15cm, height=7cm,
+    legend pos=north west,
+    ymajorgrids=true,
+    grid style=dashed,
+]
+ 
+\addplot[
+    color=blue,
+    mark=square,
+    ]
+    coordinates {
+(1,362.527549238) (2,483.113102735) (3,365.739910333) (4,356.792116485) (5,430.590387131) (6,450.970069256) (7,368.301868946) (8,373.252661797) (9,392.277078825) (10,414.156182602) (11,396.848421168) (12,408.332820942) (13,369.368163836) (14,349.304084041) (15,466.47198324) (16,384.833905253) (17,411.920989549) (18,357.669119406) (19,440.040932314) (20,469.533018513) (21,359.269999881) (22,467.047232294) (23,474.784866688) (24,440.365183774) (25,393.686893478) (26,438.410317308) (27,429.914094005) (28,338.19452178) (29,412.689702177) (30,410.060073817) (31,327.785674723) (32,339.606256674) (33,418.63400772) (34,407.68665241) (35,420.494613459) (36,384.918495071) (37,427.235632698) (38,424.448597641) (39,362.390120629) (40,401.063692961) (41,379.332073449) (42,415.550058637) (43,338.287866443) (44,396.724073233) (45,374.163758685) (46,463.177240366) (47,383.907341727) (48,408.423093685) (49,342.221009468) (50,401.274822323)
+    };
+    
+\addplot[
+    color=red,
+    mark=*,
+    ]
+    coordinates {
+(1,380.323875029) (2,545.451323442) (3,475.91297444) (4,536.112140273) (5,356.299942106) (6,551.947343776) (7,331.038621623) (8,457.283938735) (9,387.891487218) (10,401.531236071) (11,442.619485511) (12,537.941257847) (13,428.818857748) (14,432.807921939) (15,418.689424682) (16,339.492499542) (17,344.944187335) (18,507.494806794) (19,475.333829613) (20,527.918867759) (21,402.016959999) (22,342.978893924) (23,391.128295633) (24,520.227221568) (25,429.083268892) (26,416.400092928) (27,508.48098703) (28,506.848788629) (29,358.325871665) (30,392.416260687) (31,440.115941652) (32,361.010200296) (33,445.177388446) (34,495.074659891) (35,371.214220648) (36,505.675483942) (37,357.678214935) (38,417.80487864) (39,342.995455701) (40,366.318960005) (41,337.367623101) (42,422.116280895) (43,531.131602909) (44,445.560187225) (45,501.994204368) (46,415.792053236) (47,374.744119703) (48,414.704757294) (49,416.357604641)
+    };
+    
+\addplot[
+    color=purple,
+    mark=*,
+    ]
+    coordinates {
+ (1,160.930502214) (2,135.339371645) (3,193.437694068) (4,199.463810589) (5,192.58144732) (6,178.033527353) (7,135.944562014) (8,138.760881285) (9,143.094461487) (10,193.643282393) (11,180.885038887) (12,156.23966739) (13,129.444152017) (14,129.331852182) (15,189.226757266) (16,185.444268082) (17,129.799696622) (18,169.198031421) (19,190.568178176) (20,160.905839054) (21,124.795502985) (22,164.604596375) (23,118.814483527) (24,194.354158982) (25,190.616093451) (26,164.912694503) (27,126.12810236) (28,191.023022657) (29,167.54359457) (30,161.481597359) (31,147.175174063) (32,153.795516866) (33,154.537905345) (34,150.967758947) (35,176.165548135) (36,163.866312839) (37,123.980509433) (38,133.396329899) (39,127.077660227) (40,178.53374815) (41,158.568215511) (42,165.974107894) (43,198.091633842) (44,153.889692721) (45,188.823401384) (46,136.545225394) (47,159.889696246) (48,156.940528048) (49,120.277454915) (50,188.375736821)
+	};
+    \legend{JPEG2000, JPEG-LS, JPEG Standard}
+ 
+\end{axis}
+\end{tikzpicture}
+\caption[12pt]{Image Compression Rate Comparison: Acroos JPEG, JPEG2000 and JPEG-LS} \label{tab:title} 
+\end{figure}
+\end{center}
+We can check figure 5 and table 3. It's obviously that JPEG standard library has a great compression rate. Across all files, it can compress under 20\%, which is a great result. As for JPEG2000 and JPEG-LS, we can notice that these two show less differences, but JPEG2000 is slightly better than JPEG-LS. In fact, due to huffman coding is not original coding system for JPEG2000 and JPEG-LS, we can't say that these two compression method works bad on these images. Also, project implementation can also influent results. If we use standard $libjpeg$ to transform this image sets to JPEG2000 format, we can get average size of 335.49 Kilobytes under lossless.\\
+\section{Summary and Future}
+In this report, I stated some concepts, algorithms and showed the results of final project. We can see that JPEG family is working step by step to provide high compression ratio method. From JPEG to JPEG2000, it did make a lot of progress on compression. JPEG2000 as mainly implenmentation of my project, some algorithms and techniques are still not been done until this last day. But results shows a lot acroos these three steps of JPEG family. \\
+JPEG as always, shows robust and stable in compression. It has considerally larger error rate, but with its great performance on compress ratio, we can say that JPEG is still the best across these three methods. JPEG2000 and JPEG-LS recived similiar results both on compress rate and quality, but JEPG2000 works a little better than JPEG-LS. As first generation of JPEG's lossless image standard, JPEG-LS didn't get popularity's fever. The successor JPEG2000's stanard library have much better optimization on JPEG-LS's disadvantages, but it still not that heat until now.\\
+Though JPEG2000 can have lossless compress image with about 30\% compression ratio, it still not able to beat PNG.\cite{jpeg2kwiki} Also, Google's webp became more popluar with chrome's development. WebP has exceeded PNG and JPEG2000 both on lossy and lossless compression.\cite{webp}\cite{webpwiki} Some labratory standard even can achieve a considerable lower ratio than WebP.\\
+Image compression is the base of image store and usage. Compare to image application, it more focus on low level, mathmatical operations. These works seems boring, but provide everything to a high class application in modern image processing research domain.\\
 \section{Acknowledgement}
-
+I would like to express my special thanks of gratitude to Prof. Lijun Yin who gave me the best lectures and opportunity to do this start-up project. I have to say that image processing is the best course I've taken in Binghamton University. Secondly, I would like to credit HP Labs, your homepage give me a direction for study JPEG-LS. I wouldn't finish this project without these knowledges. At last, I would like to thank to my friend, Pan Huo, who inspire me on vision and image processing. Honestly, I would not take this course without inspiration of your research at my last undergrad year. Best wishes to your research.  
 
 \section{Appendix A: How to run the software}
+Note: Though every python file can be run, but only main.py and cmp.py matters.\\
+\begin{spacing}{0.7}
 
+\begin{lstlisting}[language=bash, breaklines=true]
+cd src/jp2/
+python main.py encode [input_file] [ouput_file]
+cd ../../utils/
+# input file is the original file, output_file is our target file for comparsion
+python cmp.py [input_file] [output_file]
+\end{lstlisting}
+\end{spacing}
+\section{Appendix B: Bench Experiment Script to Image data sets}
+\lstset{basicstyle=\ttfamily,
+  showstringspaces=false,
+  commentstyle=\color{red},
+  keywordstyle=\color{blue}
+}
+\begin{spacing}{0.7}
 
+\begin{lstlisting}[language=python, breaklines=true]
+#!/bin/python
+def list_and_operate(path=os.getcwd(), operator=[]):
+    flist = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    for i in flist:
+        operator[0][3] = path+'/'+i
+        operator[0][4] = path+'/'+i.split('.')[0]+'.new.bmp'
+        bash = subprocess.Popen(operator[0], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = bash.communicate()
+        print(out)
+        operator[1][3] = path+'/'+i
+        operator[1][4] = path+'/'+i.split('.')[0]+'.new.bmp'
+        bash = subprocess.Popen(operator[1], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = bash.communicate()
+        print(out)
 
-
+operator = [
+	["python", "src/jp2/main.py", "encode", "", ""],
+	["python", "utils/cmp.py", "", ""]
+]
+\end{lstlisting}
+\end{spacing}
 
 \begin{thebibliography}{9}
 \bibitem{jpegcommiteewiki} 
@@ -312,5 +511,20 @@ C. Christopoulos, A. Skodras, and T. Ebrahimi.  “The JPEG2000 Still Image Codi
 \bibitem{jpeg2kwork} 
 Prof. Edward Aboufadel.  “JPEG 2000: The Next Compression Standard using wavelet technology”,\\
 \texttt{http://faculty.gvsu.edu/aboufade/web/wavelets/student\_work/EF/how-works.html}
+\bibitem{hplab} 
+HP Labs, LOCO-I/JPEG-LS Home Page \\
+\texttt{http://www.labs.hp.com/research/info\_theory/loco/}
+\bibitem{webp} 
+Google, A new image format for the Web \\
+\texttt{https://developers.google.com/speed/webp/docs/compression}
+\bibitem{webpwiki} 
+Wikipedia, WebP Wiki \\
+\texttt{https://en.wikipedia.org/wiki/WebP}
+\bibitem{locol} 
+M. Weinberger, G. Seroussi, G. Sapiro, "The LOCO-I Lossless Image Compression Algorithm: Principles and Standardization into JPEG-LS", Hewlett-Packard Laboratories Technical Report No. HPL-98-193R1, November 1998, revised October 1999.  IEEE Trans. Image Processing, Vol. 9, August 2000, pp.1309-1324. \\
+\texttt{http://www.hpl.hp.com/loco/HPL-98-193R1.pdf}
+\bibitem{locol2} 
+M. Weinberger, G. Seroussi, G. Sapiro, "LOCO-I: A Low Complexity, Context-Based, Lossless Image Compression Algorithm," Proc. IEEE Data Compression Conference, Snowbird, Utah, March-April 1996. \\
+\texttt{http://www.hpl.hp.com/loco/dcc96copy.pdf}
 \end{thebibliography}
 \end{document}
