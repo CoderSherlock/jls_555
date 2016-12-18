@@ -10,7 +10,7 @@ class cmp:
     def __init__(self, aname, bname):
         self.imga = cv2.imread(aname)
         self.imgb = cv2.imread(bname)
-        # print self.imga, self.imgb
+        print self.imga, self.imgb
 
         if(self.imga.shape != self.imgb.shape):
             print("Wrong images, not from same origin")

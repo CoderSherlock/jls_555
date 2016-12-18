@@ -2,6 +2,7 @@ import sys
 import cv2
 import pywt
 import numpy as np
+from cdf import fwt97_2d, iwt97_2d
 from coding import huffman
 from matplotlib import pyplot as plt
 
@@ -136,6 +137,10 @@ if __name__ == "__main__":
     u = round_control(u, height, width, 3)
     v = round_control(v, height, width, 3)
 
+    #y = fwt97_2d(y, 3)
+    #u = fwt97_2d(u, 3)
+    #v = fwt97_2d(v, 3)
+
     plt.subplot(221),plt.imshow(y,'gray'),plt.title('y')
     plt.subplot(222),plt.imshow(u,'gray'),plt.title('u')
     plt.subplot(223),plt.imshow(v,'gray'),plt.title('v')
@@ -161,8 +166,11 @@ if __name__ == "__main__":
             alist.append(v[i][j])
     #print alist
     tree = huffman(alist)
+    print "build tree"
     tree.buildtree()
+    print "encode"
     tree.encode()
+    print "estimate"
     tree.estimateSize()
 
     # End testing something
@@ -188,6 +196,10 @@ if __name__ == "__main__":
     y = round_control(y, height, width, 3, 1)
     u = round_control(u, height, width, 3, 1)
     v = round_control(v, height, width, 3, 1)
+
+    #y = iwt97_2d(y, 3)
+    #u = iwt97_2d(u, 3)
+    #v = iwt97_2d(v, 3)
 
 
     #print_file(y, height, width, "y.dat")

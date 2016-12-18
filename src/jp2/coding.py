@@ -57,8 +57,10 @@ class huffman:
         return sorted(listofNode,key=lambda node:node.weight)
 
     def encode(self):
+        self.blen = 0
         for i in self.data:
-            self.bflow += self.encodeDict[i]
+            # self.bflow += self.encodeDict[i]
+            self.blen += len(self.encodeDict[i])
 
     def estimateSize(self):
         fileSize = 0
@@ -69,7 +71,7 @@ class huffman:
             largestBits = len(self.encodeDict[i]) if len(self.encodeDict[i]) > largestBits else largestBits
 
         fileSize += len(self.encodeDict)*(largestBits+16)
-        fileSize += len(self.bflow)
+        fileSize += self.blen
         print("Esitmated Size is {0} Kbs".format(float(fileSize)/8/1024))
 
     def write2File(self, filename="outstream.jp2"):
